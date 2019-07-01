@@ -4,21 +4,29 @@ import (
 	"bufio"
 	"fmt"
 	"net"
+	"os"
 )
 
 func main() {
-	p := make([]byte, 2048)
 	conn, err := net.Dial("udp", "127.0.0.1:12345")
+	defer conn.Close()
 	if err != nil {
 		fmt.Printf("Some error %v", err)
 		return
 	}
-	fmt.Fprintf(conn, "Hi UDP Server, How are you doing?")
-	_, err = bufio.NewReader(conn).Read(p)
-	if err == nil {
-		fmt.Printf("%s\n", p)
-	} else {
-		fmt.Printf("Some error %v\n", err)
+	s := bufio.NewScanner(os.Stdin)
+	for s.Scan() {
+		text := s.Text()
+		if text == "exit" {
+			return
+		}
+		fmt.Fprintf(conn, s.Text())
+		// p := make([]byte, 2048)
+		// _, err = bufio.NewReader(conn).Read(p)
+		// if err == nil {
+		// 	fmt.Printf("%s\n", p)
+		// } else {
+		// 	fmt.Printf("Some error %v\n", err)
+		// }
 	}
-	conn.Close()
 }
