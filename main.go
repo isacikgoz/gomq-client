@@ -2,9 +2,12 @@ package main
 
 import (
 	"bufio"
+	"encoding/json"
 	"fmt"
 	"net"
 	"os"
+
+	"github.com/isacikgoz/gomq/api"
 )
 
 func main() {
@@ -20,13 +23,24 @@ func main() {
 		if text == "exit" {
 			return
 		}
-		fmt.Fprintf(conn, s.Text())
-		// p := make([]byte, 2048)
-		// _, err = bufio.NewReader(conn).Read(p)
-		// if err == nil {
-		// 	fmt.Printf("%s\n", p)
-		// } else {
-		// 	fmt.Printf("Some error %v\n", err)
-		// }
+		pl := api.BareMessage{
+			Message: s.Text(),
+		}
+		plData, err := json.Marshal(pl)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "error wrapping message: %v", err)
+			os.Exit(1)
+		}
+		msg := &api.AnnotatedMessage{
+			Command: "pub",
+			Target:  "topic_1",
+			Payload: plData,
+		}
+		b, err := json.Marshal(msg)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "error wrapping message: %v", err)
+			os.Exit(1)
+		}
+		conn.Write(b)
 	}
 }
