@@ -4,6 +4,8 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	"io"
+	"log"
 	"net"
 	"os"
 
@@ -67,11 +69,19 @@ func main() {
 func listenAndPrint(conn net.Conn) {
 	for {
 		p := make([]byte, 16384)
-		_, err := bufio.NewReader(conn).Read(p)
-		if err != nil {
-			fmt.Fprintf(os.Stdout, "something happened very bad: %v", err)
+		n, err := bufio.NewReader(conn).Read(p)
+		if err != nil && err == io.EOF {
 			break
+		} else if err != nil {
+			fmt.Fprintf(os.Stdout, "something happened very bad: %v", err)
 		}
-		fmt.Fprintf(os.Stdout, "%s\n", p)
+		var msg api.AnnotatedMessage
+		if err := json.Unmarshal(p[:n], &msg); err != nil {
+			fmt.Fprintf(os.Stdout, "something happened: %v\n", err)
+			fmt.Fprintf(os.Stdout, "message is: %s\n", p)
+		}
+		var bare BareMessage
+		json.Unmarshal(msg.Payload, &bare)
+		log.Printf("%s\n", bare.Message)
 	}
 }
