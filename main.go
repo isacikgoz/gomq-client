@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -36,15 +37,21 @@ func main() {
 		fmt.Fprintf(os.Stderr, "some error %v\n", err)
 		os.Exit(1)
 	}
-
+	ctx := context.Background()
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 	signal.Notify(interrupt, syscall.SIGTERM, os.Interrupt)
 
 	go listenAndPrint(conn, inc)
 	go listenInput(out)
 
-	go func() {
+	go func(cx context.Context) {
+	loop:
 		for {
 			select {
+			case <-cx.Done():
+				fmt.Println("goodbye!")
+				break loop
 			case msg := <-inc:
 				var bare BareMessage
 				json.Unmarshal(msg.Payload, &bare)
@@ -58,7 +65,7 @@ func main() {
 				conn.Write(b)
 			}
 		}
-	}()
+	}(ctx)
 
 	<-interrupt
 }
