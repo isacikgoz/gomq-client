@@ -22,11 +22,15 @@ type BareMessage struct {
 
 func main() {
 
-	inc := make(chan api.AnnotatedMessage)
-	out := make(chan api.AnnotatedMessage)
-	interrupt := make(chan os.Signal)
+	var (
+		inc       = make(chan api.AnnotatedMessage)
+		out       = make(chan api.AnnotatedMessage)
+		interrupt = make(chan os.Signal)
+		err       error
+		conn      io.ReadWriteCloser
+	)
 
-	conn, err := net.Dial(os.Args[1], "127.0.0.1:12345")
+	conn, err = net.Dial(os.Args[1], "127.0.0.1:12345")
 	defer conn.Close()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "some error %v\n", err)
