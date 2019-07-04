@@ -14,25 +14,33 @@ import (
 	"github.com/isacikgoz/gomq/api"
 )
 
+// BareMessage just does fine
 type BareMessage struct {
 	Message string
 }
 
 func main() {
 
-	var inc chan *api.AnnotatedMessage
-	var out chan *api.AnnotatedMessage
+	inc := make(chan api.AnnotatedMessage)
+	out := make(chan api.AnnotatedMessage)
+	interrupt := make(chan os.Signal)
 
 	conn, err := net.Dial(os.Args[1], "127.0.0.1:12345")
 	defer conn.Close()
 	if err != nil {
-		fmt.Printf("Some error %v", err)
-		return
+		fmt.Fprintf(os.Stderr, "some error %v\n", err)
+		os.Exit(1)
 	}
-	subscribe(conn)
+	err = subscribe(conn)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "some error %v\n", err)
+		os.Exit(1)
+	}
 
-	interrupt := make(chan os.Signal)
 	signal.Notify(interrupt, syscall.SIGTERM, os.Interrupt)
+
+	go listenAndPrint(conn, inc)
+	go listenInput(out)
 
 	go func() {
 		for {
@@ -52,29 +60,23 @@ func main() {
 		}
 	}()
 
-	go listenAndPrint(conn, inc)
-	go listenInput(conn, out)
-
 	<-interrupt
 }
 
-func listenInput(conn net.Conn, ch chan<- *api.AnnotatedMessage) {
+func listenInput(ch chan api.AnnotatedMessage) {
 	s := bufio.NewScanner(os.Stdin)
 
 	for s.Scan() {
-		text := s.Text()
-		if text == "exit" {
-			return
-		}
 		pl := BareMessage{
 			Message: s.Text(),
 		}
 		plData, err := json.Marshal(pl)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "error wrapping message: %v", err)
-			os.Exit(1)
+			continue
 		}
-		msg := &api.AnnotatedMessage{
+
+		msg := api.AnnotatedMessage{
 			Command: "PUB",
 			Target:  "topic_1",
 			Payload: plData,
@@ -83,10 +85,10 @@ func listenInput(conn net.Conn, ch chan<- *api.AnnotatedMessage) {
 	}
 }
 
-func listenAndPrint(conn net.Conn, ch chan<- *api.AnnotatedMessage) {
+func listenAndPrint(rd net.Conn, ch chan api.AnnotatedMessage) {
 	for {
 		p := make([]byte, 16384)
-		n, err := bufio.NewReader(conn).Read(p)
+		n, err := bufio.NewReader(rd).Read(p)
 		if err != nil && err == io.EOF {
 			break
 		} else if err != nil {
@@ -95,13 +97,13 @@ func listenAndPrint(conn net.Conn, ch chan<- *api.AnnotatedMessage) {
 		var msg api.AnnotatedMessage
 		if err := json.Unmarshal(p[:n], &msg); err != nil {
 			fmt.Fprintf(os.Stdout, "something happened: %v\n", err)
-			fmt.Fprintf(os.Stdout, "message is: %s\n", p)
+			continue
 		}
-		ch <- &msg
+		ch <- msg
 	}
 }
 
-func subscribe(conn net.Conn) {
+func subscribe(conn net.Conn) error {
 	sub := &api.AnnotatedMessage{
 		Command: "SUB",
 		Target:  "topic_1",
@@ -109,8 +111,8 @@ func subscribe(conn net.Conn) {
 
 	b, err := json.Marshal(sub)
 	if err != nil {
-		fmt.Printf("Some error %v", err)
-		return
+		return fmt.Errorf("could not send subscribe message: %v", err)
 	}
 	conn.Write(b)
+	return nil
 }
