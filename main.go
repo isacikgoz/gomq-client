@@ -92,7 +92,7 @@ func listenInput(ch chan api.AnnotatedMessage) {
 	}
 }
 
-func listenAndPrint(rd net.Conn, ch chan api.AnnotatedMessage) {
+func listenAndPrint(rd io.Reader, ch chan api.AnnotatedMessage) {
 	for {
 		p := make([]byte, 16384)
 		n, err := bufio.NewReader(rd).Read(p)
@@ -110,7 +110,7 @@ func listenAndPrint(rd net.Conn, ch chan api.AnnotatedMessage) {
 	}
 }
 
-func subscribe(conn net.Conn) error {
+func subscribe(rd io.Writer) error {
 	sub := &api.AnnotatedMessage{
 		Command: "SUB",
 		Target:  "topic_1",
@@ -120,6 +120,6 @@ func subscribe(conn net.Conn) error {
 	if err != nil {
 		return fmt.Errorf("could not send subscribe message: %v", err)
 	}
-	conn.Write(b)
+	rd.Write(b)
 	return nil
 }
