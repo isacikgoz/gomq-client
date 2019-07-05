@@ -47,7 +47,7 @@ func main() {
 	signal.Notify(interrupt, syscall.SIGTERM, os.Interrupt)
 
 	go listenAndPrint(conn, inc)
-	go listenInput(out)
+	go listenInput(os.Stdin, out)
 
 	go func(cx context.Context) {
 	loop:
@@ -74,8 +74,8 @@ func main() {
 	<-interrupt
 }
 
-func listenInput(ch chan api.AnnotatedMessage) {
-	s := bufio.NewScanner(os.Stdin)
+func listenInput(rd io.Reader, ch chan api.AnnotatedMessage) {
+	s := bufio.NewScanner(rd)
 
 	for s.Scan() {
 		pl := BareMessage{
