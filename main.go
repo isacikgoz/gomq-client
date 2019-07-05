@@ -20,61 +20,64 @@ type BareMessage struct {
 	Message string
 }
 
+var (
+	inc       = make(chan api.AnnotatedMessage)
+	out       = make(chan api.AnnotatedMessage)
+	interrupt = make(chan os.Signal)
+)
+
 func main() {
 
-	var (
-		inc       = make(chan api.AnnotatedMessage)
-		out       = make(chan api.AnnotatedMessage)
-		interrupt = make(chan os.Signal)
-		err       error
-		conn      io.ReadWriteCloser
-	)
-
-	conn, err = net.Dial(os.Args[1], "127.0.0.1:12345")
+	conn, err := net.Dial(os.Args[1], "127.0.0.1:12345")
 	defer conn.Close()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "some error %v\n", err)
-		os.Exit(1)
-	}
-	err = subscribe(conn)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "some error %v\n", err)
-		os.Exit(1)
-	}
+	errorf(err)
+
+	errorf(subscribe(conn))
+
 	ctx := context.Background()
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
+
 	signal.Notify(interrupt, syscall.SIGTERM, os.Interrupt)
 
-	go listenAndPrint(conn, inc)
-	go listenInput(os.Stdin, out)
-
-	go func(cx context.Context) {
-	loop:
-		for {
-			select {
-			case <-cx.Done():
-				fmt.Println("goodbye!")
-				break loop
-			case msg := <-inc:
-				var bare BareMessage
-				json.Unmarshal(msg.Payload, &bare)
-				log.Printf("%s\n", bare.Message)
-			case msg := <-out:
-				b, err := json.Marshal(msg)
-				if err != nil {
-					fmt.Fprintf(os.Stderr, "error wrapping message: %v", err)
-					os.Exit(1)
-				}
-				conn.Write(b)
-			}
-		}
-	}(ctx)
+	go listenFromBroker(conn, inc)
+	go listenFromUser(os.Stdin, out)
+	go selectMessages(ctx, conn, inc, out)
 
 	<-interrupt
 }
 
-func listenInput(rd io.Reader, ch chan api.AnnotatedMessage) {
+func errorf(err error) {
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "some error %v\n", err)
+		os.Exit(1)
+	}
+}
+
+func selectMessages(ctx context.Context, conn io.Writer, inc, out chan api.AnnotatedMessage) {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	for {
+		select {
+		case <-ctx.Done():
+			fmt.Println("goodbye!")
+			return
+		case msg := <-inc:
+			var bare BareMessage
+			json.Unmarshal(msg.Payload, &bare)
+			log.Printf("%s\n", bare.Message)
+		case msg := <-out:
+			b, err := json.Marshal(msg)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "error wrapping message: %v", err)
+				os.Exit(1)
+			}
+			conn.Write(b)
+		}
+	}
+}
+
+func listenFromUser(rd io.Reader, ch chan api.AnnotatedMessage) {
 	s := bufio.NewScanner(rd)
 
 	for s.Scan() {
@@ -96,19 +99,17 @@ func listenInput(rd io.Reader, ch chan api.AnnotatedMessage) {
 	}
 }
 
-func listenAndPrint(rd io.Reader, ch chan api.AnnotatedMessage) {
+func listenFromBroker(rd io.Reader, ch chan api.AnnotatedMessage) {
 	for {
 		p := make([]byte, 16384)
 		n, err := bufio.NewReader(rd).Read(p)
-		if err != nil && err == io.EOF {
-			break
-		} else if err != nil {
-			fmt.Fprintf(os.Stdout, "something happened very bad: %v", err)
+		if err != nil {
+			break // probably network connection closed
 		}
+
 		var msg api.AnnotatedMessage
 		if err := json.Unmarshal(p[:n], &msg); err != nil {
-			fmt.Fprintf(os.Stdout, "something happened: %v\n", err)
-			continue
+			continue // maybe break
 		}
 		ch <- msg
 	}
