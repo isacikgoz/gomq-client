@@ -61,7 +61,7 @@ func TestListenFromUser(t *testing.T) {
 
 	r := strings.NewReader("hak ben")
 
-	go listenFromUser(r, messages)
+	go listenFromUser(r, messages, "topic")
 
 	ctx := context.Background()
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
@@ -94,7 +94,7 @@ func TestListenFromBroker(t *testing.T) {
 }
 
 func TestSubscribe(t *testing.T) {
-	if err := subscribe(os.Stdout); err != nil {
+	if err := subscribe(os.Stdout, "testing", "default"); err != nil {
 		t.Errorf("test failed: %v", err)
 	}
 }

@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"io"
 	"log"
@@ -28,11 +29,18 @@ var (
 
 func main() {
 
-	conn, err := net.Dial(os.Args[1], "127.0.0.1:12345")
+	protocol := flag.String("protocol", "udp", "the protocol to connect to the broker.")
+	topic := flag.String("topic", "default", "topic to be subscribed.")
+	name := flag.String("name", "", "user name.")
+
+	flag.Parse()
+	fmt.Printf("the protocol is %q and subscribed to topic %q as %q\n", *protocol, *topic, *name)
+
+	conn, err := net.Dial(*protocol, "127.0.0.1:12345")
 	defer conn.Close()
 	errorf(err)
 
-	errorf(subscribe(conn))
+	errorf(subscribe(conn, *name, *topic))
 
 	ctx := context.Background()
 	ctx, cancel := context.WithCancel(ctx)
@@ -41,7 +49,7 @@ func main() {
 	signal.Notify(interrupt, syscall.SIGTERM, os.Interrupt)
 
 	go listenFromBroker(conn, inc)
-	go listenFromUser(os.Stdin, out)
+	go listenFromUser(os.Stdin, out, *topic)
 	go selectMessages(ctx, conn, inc, out)
 
 	<-interrupt
@@ -77,7 +85,7 @@ func selectMessages(ctx context.Context, conn io.Writer, inc, out chan api.Annot
 	}
 }
 
-func listenFromUser(rd io.Reader, ch chan api.AnnotatedMessage) {
+func listenFromUser(rd io.Reader, ch chan api.AnnotatedMessage, topic string) {
 	s := bufio.NewScanner(rd)
 
 	for s.Scan() {
@@ -92,7 +100,7 @@ func listenFromUser(rd io.Reader, ch chan api.AnnotatedMessage) {
 
 		msg := api.AnnotatedMessage{
 			Command: "PUB",
-			Target:  "topic_1",
+			Target:  topic,
 			Payload: plData,
 		}
 		ch <- msg
@@ -115,10 +123,11 @@ func listenFromBroker(rd io.Reader, ch chan api.AnnotatedMessage) {
 	}
 }
 
-func subscribe(rd io.Writer) error {
+func subscribe(rd io.Writer, name, topic string) error {
 	sub := &api.AnnotatedMessage{
+		Sender:  name,
 		Command: "SUB",
-		Target:  "topic_1",
+		Target:  topic,
 	}
 
 	b, err := json.Marshal(sub)
